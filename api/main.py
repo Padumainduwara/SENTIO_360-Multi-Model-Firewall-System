@@ -1,0 +1,300 @@
+from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+import uvicorn
+import joblib
+import pandas as pd
+import numpy as np
+import cv2
+import json
+import os
+import logging
+import time 
+from datetime import datetime
+from pathlib import Path
+import warnings
+import shap 
+from scipy.stats import ks_2samp
+
+warnings.filterwarnings('ignore')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+from tensorflow.keras.models import load_model
+
+
+# SETUP & MEMORY
+BASE_DIR = Path(__file__).resolve().parent.parent
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Logging Format (Enterprise Standard)
+logging.basicConfig(filename=LOGS_DIR / 'firewall.log', level=logging.WARNING, format='%(asctime)s - THREAT: %(message)s')
+
+BLOCKED_IPS = set()
+traffic_logs = [] 
+
+# RATE LIMITING MEMORY
+REQUEST_COUNTS = {}
+RATE_LIMIT_WINDOW = 10 
+MAX_REQUESTS_PER_WINDOW = 15 
+
+# DATA SCIENCE: Statistical Concept Drift Tracking (KS-Test)
+baseline_safe_traffic = []  
+recent_safe_traffic = []    
+drift_alert_active = False
+
+app = FastAPI(title="SENTIO 360 - Enterprise AI Firewall")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+app.mount("/site", StaticFiles(directory=str(BASE_DIR / "target_website")), name="site")
+app.mount("/admin", StaticFiles(directory=str(BASE_DIR / "admin_dashboard")), name="admin")
+
+class MarkSafeRequest(BaseModel):
+    ip: str
+
+# LOAD PRE-TRAINED AI MODELS 
+MODELS_DIR = BASE_DIR / 'models'
+print("[*] Waking up SENTIO 360 Omni-Modal AI Brains...")
+
+try:
+    rf_behavior_model = joblib.load(MODELS_DIR / 'behavior_encoder' / 'rf_behavior_model.pkl')
+    behavior_scaler = joblib.load(MODELS_DIR / 'behavior_encoder' / 'behavior_scaler.pkl')
+    
+    print("[*] Loading Deep NLP Neural Network...")
+    # 💥 FIX: Added compile=False to strictly mute Keras warning logs!
+    dnn_text_model = load_model(MODELS_DIR / 'text_encoder' / 'dnn_text_model.h5', compile=False)
+    tfidf_vectorizer = joblib.load(MODELS_DIR / 'text_encoder' / 'tfidf_vectorizer.pkl')
+    
+    # 💥 FIX: Added compile=False
+    cnn_vision_model = load_model(MODELS_DIR / 'vision_encoder' / 'cnn_vision_model.h5', compile=False)
+    
+    try:
+        # 💥 FIX: Added compile=False
+        autoencoder_model = load_model(MODELS_DIR / 'behavior_encoder' / 'autoencoder_model.h5', compile=False)
+        print(" -> [DS] Deep Autoencoder loaded successfully.")
+    except:
+        autoencoder_model = None
+
+    print("[*] Initializing SHAP Game Theory Explainer...")
+    shap_explainer = shap.TreeExplainer(rf_behavior_model)
+
+    print("[SUCCESS] All Models Loaded!")
+except Exception as e:
+    print(f"[ERROR] Loading failed: {e}")
+
+BEHAVIOR_FEATURES = ['Max Packet Length', 'Packet Length Variance', 'Avg Bwd Segment Size', 'Average Packet Size', 'Bwd Packet Length Max', 'Destination Port', 'Packet Length Std', 'Total Length of Bwd Packets', 'Subflow Fwd Bytes', 'Bwd Header Length']
+
+# ENDPOINTS FOR DASHBOARD & NEW FEATURES
+@app.get("/api/v1/check_ip")
+async def check_ip(request: Request):
+    if request.client.host in BLOCKED_IPS:
+        return {"blocked": True, "reason": "IP Permanently Banned by SENTIO 360"}
+    return {"blocked": False}
+
+@app.get("/api/v1/dashboard_data")
+async def get_dashboard_data():
+    return {
+        "total_requests": len(traffic_logs),
+        "blocked_ips": list(BLOCKED_IPS),
+        "logs": list(reversed(traffic_logs))[:50],
+        "concept_drift": drift_alert_active 
+    }
+
+@app.post("/api/v1/trap")
+async def trigger_trap(request: Request):
+    client_ip = request.client.host
+    BLOCKED_IPS.add(client_ip)
+    
+    details = "[Active Defense] Hidden Honeypot triggered."
+    action = "IP BANNED (HONEYPOT)"
+    
+    traffic_logs.append({
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "ip": client_ip, "status": "BLOCK", "action": action,
+        "details": details,
+        "latency": 0.0, "risk": 1.0, "anomaly_score": 0.0
+    })
+    
+    # 💥 FIX: Writing Honeypot Traps to firewall.log
+    logging.warning(f"IP: {client_ip} | ACTION: {action} | DETAILS: {details}")
+    
+    return {"status": "BANNED"}
+
+@app.post("/api/v1/mark_safe")
+async def mark_safe(req: MarkSafeRequest):
+    if req.ip in BLOCKED_IPS:
+        BLOCKED_IPS.remove(req.ip)
+    return {"status": "UNBANNED"}
+
+# CORE FIREWALL ENGINE (Deep NLP + Autoencoder + SHAP)
+
+@app.post("/api/v1/inspect")
+async def inspect_traffic(
+    request: Request, text_payload: str = Form(""),
+    behavior_json: str = Form("{}"), file: UploadFile = File(None)
+):
+    global drift_alert_active, baseline_safe_traffic, recent_safe_traffic
+    start_time = time.time()
+    client_ip = request.client.host
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    
+    if client_ip in BLOCKED_IPS:
+        return {"status": "BLOCK", "action": "BANNED", "threat_details": ["IP is already Blacklisted."]}
+
+    # LAYER 1: RATE LIMITING 
+    current_time = time.time()
+    if client_ip not in REQUEST_COUNTS: REQUEST_COUNTS[client_ip] = []
+    REQUEST_COUNTS[client_ip] = [t for t in REQUEST_COUNTS[client_ip] if current_time - t < RATE_LIMIT_WINDOW]
+    REQUEST_COUNTS[client_ip].append(current_time)
+    
+    if len(REQUEST_COUNTS[client_ip]) > MAX_REQUESTS_PER_WINDOW:
+        BLOCKED_IPS.add(client_ip)
+        
+        details = "Spam/Brute-force detected."
+        action = "IP BANNED (RATE LIMIT)"
+        
+        traffic_logs.append({
+            "time": timestamp, "ip": client_ip, "status": "BLOCK", "action": action,
+            "details": details, "latency": float(round((time.time() - start_time) * 1000, 2)), 
+            "risk": 1.0, "anomaly_score": 0.0
+        })
+        
+        # 💥 FIX: Writing Rate Limit attacks to firewall.log
+        logging.warning(f"IP: {client_ip} | ACTION: {action} | DETAILS: {details}")
+        
+        return {"status": "BLOCK", "action": "BANNED", "threat_details": ["Rate Limit Exceeded."]}
+
+    p_nlp_threat, p_beh_threat, p_vis_threat = 0.0, 0.0, 0.0
+    threat_explanations = []
+    is_bot_attack = False 
+    anomaly_error = 0.0 
+
+    # 1. DEEP NLP TEXT ANALYSIS (Neural Network)
+    p_nlp_threat = 0.0
+    if text_payload.strip():
+        word_count = len(text_payload.split())
+        special_chars = any(char in text_payload for char in ['<', '>', '{', '}', '(', ')', '/', '\\', '=', "'", '"'])
+        
+        if word_count < 5 and not special_chars:
+            prob_safe, prob_web, prob_llm = 1.0, 0.0, 0.0
+        else:
+            text_vec = tfidf_vectorizer.transform([text_payload]).toarray() 
+            probs = dnn_text_model.predict(text_vec, verbose=0)[0]
+            prob_safe, prob_web, prob_llm = probs[0], probs[1], probs[2]
+            
+            if prob_llm > 0.65: 
+                p_nlp_threat = float(prob_llm) 
+                threat_explanations.append(f"[NLP-XAI] Deep Neural Net isolated LLM Prompt Injection patterns (Conf: {prob_llm*100:.1f}%)")
+            elif prob_web > 0.60:
+                p_nlp_threat = float(prob_web) 
+                threat_explanations.append(f"[NLP-XAI] Deep Neural Net detected SQLi/XSS syntax (Conf: {prob_web*100:.1f}%)")
+                
+            
+    # 2. BEHAVIORAL ANALYSIS & DATA SCIENCE UPGRADES
+    if behavior_json != "{}" and behavior_json.strip() != "":
+        try:
+            b_data = json.loads(behavior_json)
+            b_df = pd.DataFrame(columns=BEHAVIOR_FEATURES)
+            b_df.loc[0] = [float(b_data.get(feat, 0.0)) for feat in BEHAVIOR_FEATURES]
+            b_scaled = behavior_scaler.transform(b_df)
+            
+            p_beh_threat = float(rf_behavior_model.predict_proba(b_scaled)[0][1])
+            max_len = float(b_data.get("Max Packet Length", 0.0))
+            
+            # REAL DEEP AUTOENCODER
+            if autoencoder_model:
+                reconstruction = autoencoder_model.predict(b_scaled, verbose=0)
+                anomaly_error = round(float(np.mean(np.power(b_scaled - reconstruction, 2))), 4)
+            else:
+                anomaly_error = round(float(np.linalg.norm(b_scaled[0])), 2)
+
+            if anomaly_error > 5.0:
+                threat_explanations.append(f"[ZERO-DAY] Autoencoder Anomaly Spike! (MSE: {anomaly_error})")
+                p_beh_threat = max(p_beh_threat, 0.85)
+                is_bot_attack = True
+
+            # SHAP EXPLAINABLE AI
+            if p_beh_threat > 0.40:
+                p_beh_threat = max(p_beh_threat, 0.99)
+                is_bot_attack = True 
+                try:
+                    shap_vals = shap_explainer.shap_values(b_scaled)
+                    vals = shap_vals[1][0] if isinstance(shap_vals, list) else shap_vals[0]
+                    top_feature_idx = int(np.argmax(np.abs(vals)))
+                    top_feature_name = BEHAVIOR_FEATURES[top_feature_idx]
+                    threat_explanations.append(f"[SHAP-XAI] Mathematical attribution isolated '{top_feature_name}' as root cause.")
+                except:
+                    threat_explanations.append(f"[BEH-XAI] Behavioral deviation detected.")
+
+            # KS-TEST STATISTICAL CONCEPT DRIFT
+            if not is_bot_attack and p_beh_threat < 0.2:
+                if len(baseline_safe_traffic) < 50:
+                    baseline_safe_traffic.append(max_len)
+                else:
+                    recent_safe_traffic.append(max_len)
+                    if len(recent_safe_traffic) > 30:
+                        recent_safe_traffic.pop(0)
+                        stat, p_value = ks_2samp(baseline_safe_traffic, recent_safe_traffic)
+                        if p_value < 0.05:
+                            drift_alert_active = True
+
+        except Exception as e: pass
+
+    # 3. VISION ANALYSIS 
+    if file is not None:
+        try:
+            file_bytes = await file.read()
+            nparr = np.frombuffer(file_bytes, np.uint8)
+            decoded_img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+            has_static = any(sig in file_bytes.lower() for sig in [b"<?php", b"<script", b"system(", b"eval(", b"$hacker"])
+
+            if not (decoded_img is not None and not has_static):
+                padded_bytes = file_bytes.ljust(4096, b'\x00')[:4096]
+                texture_img = np.frombuffer(padded_bytes, dtype=np.uint8).reshape((64, 64)) / 255.0
+                p_vis_threat = float(cnn_vision_model.predict(texture_img.reshape(-1, 64, 64, 1), verbose=0)[0][0])
+                if has_static: p_vis_threat = max(p_vis_threat, 0.95)
+                
+                if p_vis_threat > (0.50 if has_static else 0.40):
+                    threat_explanations.append(f"[VIS-XAI] Disguised Malware Texture. (Conf: {p_vis_threat*100:.1f}%)")
+        except Exception as e: pass
+
+    # DATA SCIENCE: META-LEARNING FUSION LAYER
+    W_nlp, W_beh, W_vis = 0.35, 0.45, 0.20
+    final_risk_score = float((p_nlp_threat * W_nlp) + (p_beh_threat * W_beh) + (p_vis_threat * W_vis))
+    final_risk_score = float(max(final_risk_score, p_nlp_threat, p_beh_threat, p_vis_threat))
+
+    action_taken = "PASSED"
+    status = "ALLOW"
+    
+    if final_risk_score >= 0.6:
+        status = "BLOCK"
+        if is_bot_attack:
+            BLOCKED_IPS.add(client_ip)
+            action_taken = "IP BANNED (BOTNET)"
+        else:
+            action_taken = "PAYLOAD DROPPED (WARNING)"
+            
+    process_time_ms = float(round((time.time() - start_time) * 1000, 2))
+    
+    details_string = " | ".join(threat_explanations) if threat_explanations else "[Clean Traffic]"
+    
+    traffic_logs.append({
+        "time": timestamp, 
+        "ip": client_ip, 
+        "status": status,
+        "action": action_taken, 
+        "details": details_string,
+        "latency": process_time_ms, 
+        "risk": float(min(round(final_risk_score, 2), 1.0)),
+        "anomaly_score": float(anomaly_error)
+    })
+    
+    # 💥 THE FIX: Writing actual Threat Details to the firewall.log file! 💥
+    if status == "BLOCK":
+        log_msg = f"IP: {client_ip} | ACTION: {action_taken} | RISK: {final_risk_score:.2f} | DETAILS: {details_string}"
+        logging.warning(log_msg)
+        
+    return {"status": status, "action": action_taken, "threat_details": threat_explanations}
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

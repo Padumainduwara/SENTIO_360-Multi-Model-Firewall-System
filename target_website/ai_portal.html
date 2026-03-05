@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Portal | SENTIO 360</title>
+    <script src="firewall_guard.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast { padding: 15px 20px; border-radius: 8px; font-weight: bold; color: white; min-width: 300px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); transform: translateX(120%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #064e3b; border-left: 6px solid #10b981; }
+        .toast.warning { background: #450a0a; border-left: 6px solid #ef4444; }
+    </style>
+</head>
+<body class="bg-[#050505] text-white font-sans selection:bg-blue-500 selection:text-white">
+    
+    <div id="toastContainer"></div>
+
+    <nav class="bg-[#0a0a0a]/90 backdrop-blur-md sticky top-0 z-50 border-b border-gray-800">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="text-2xl font-black tracking-wider text-blue-500">SENTIO<span class="text-white">360</span></div>
+            <div class="flex gap-8 font-semibold text-sm text-gray-300">
+                <a href="index.html" class="hover:text-blue-400 transition">Home</a>
+                <a href="about.html" class="hover:text-blue-400 transition">About Us</a>
+                <a href="ai_portal.html" class="text-blue-400">AI Portal</a>
+                <a href="contact.html" class="hover:text-blue-400 transition">Contact</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="max-w-5xl mx-auto px-6 py-16 flex flex-col md:flex-row gap-8">
+        <div class="flex-1 bg-[#0a0a0a] p-8 rounded-2xl border border-gray-800 shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-blue-600/10 blur-3xl rounded-full"></div>
+            <h2 class="text-2xl font-black mb-2 text-blue-400 flex items-center gap-2">NLP Engine Interface</h2>
+            <p class="text-gray-400 text-sm mb-6 leading-relaxed">Test the Language Model. Sentio 360 WAF will inspect this payload for Prompt Injections, SQLi, and XSS.</p>
+            <textarea id="textPayload" rows="5" class="w-full bg-[#050505] border border-gray-700 rounded-xl p-4 text-gray-300 font-mono text-sm mb-6 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all resize-none shadow-inner" placeholder="> Enter query, prompt or payload here..."></textarea>
+            <button onclick="sendPayload()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-[0_4px_14px_0_rgba(37,99,235,0.39)] transition-all uppercase tracking-widest text-sm">Submit Query</button>
+        </div>
+
+        <div class="flex-1 bg-[#0a0a0a] p-8 rounded-2xl border border-gray-800 shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-purple-600/10 blur-3xl rounded-full"></div>
+            <h2 class="text-2xl font-black mb-2 text-purple-400 flex items-center gap-2"> Vision Engine Interface</h2>
+            <p class="text-gray-400 text-sm mb-6 leading-relaxed">Upload files for AI Binary Analysis. CNNs will scan for disguised malware and anomalous textures.</p>
+            
+            <div class="border-2 border-dashed border-gray-700 bg-[#050505] rounded-xl p-10 text-center relative hover:border-purple-500 hover:bg-purple-900/10 transition-all mb-6 group cursor-pointer shadow-inner">
+                <input type="file" id="fileUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                <svg class="mx-auto h-12 w-12 text-gray-500 mb-4 group-hover:text-purple-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                <p id="fileNameDisplay" class="text-gray-400 font-bold group-hover:text-purple-300 transition-colors">Click or Drag File to Upload</p>
+                <p id="fileSubText" class="text-xs text-gray-600 mt-2">Max Size: 10MB</p>
+            </div>
+            
+            <button onclick="sendPayload()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 rounded-xl shadow-[0_4px_14px_0_rgba(147,51,234,0.39)] transition-all uppercase tracking-widest text-sm">Analyze Binary</button>
+        </div>
+    </div>
+
+    <footer class="border-t border-gray-800 bg-[#050505] py-8 mt-10">
+        <div class="text-center text-gray-500 text-sm font-medium">
+            Developed By Paduma Induwara<br>
+            &copy; 2026 SENTIO360.com
+        </div>
+    </footer>
+
+    <script>
+        // --- NEW UPDATE: Dynamic File Name Display ---
+        document.getElementById('fileUpload').addEventListener('change', function(e) {
+            const displayElement = document.getElementById('fileNameDisplay');
+            const subTextElement = document.getElementById('fileSubText');
+            
+            if (e.target.files && e.target.files.length > 0) {
+                const fileName = e.target.files[0].name;
+                const fileSize = (e.target.files[0].size / 1024).toFixed(2) + ' KB'; // Calculate Size
+                
+                // Update UI visually
+                displayElement.innerText = `📄 ${fileName}`;
+                displayElement.classList.remove('text-gray-400');
+                displayElement.classList.add('text-purple-400');
+                
+                subTextElement.innerText = `Size: ${fileSize} - Ready to Analyze`;
+                subTextElement.classList.add('text-green-500');
+            } else {
+                // Reset UI if canceled
+                displayElement.innerText = 'Click or Drag File to Upload';
+                displayElement.classList.add('text-gray-400');
+                displayElement.classList.remove('text-purple-400');
+                subTextElement.innerText = 'Max Size: 10MB';
+                subTextElement.classList.remove('text-green-500');
+            }
+        });
+
+        // Toast Notification System
+        function showToast(message, type) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type} show`;
+            toast.innerHTML = type === 'success' ? `✅ ${message}` : `⚠️ WARNING: ${message}`;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // Send Payload to WAF Core
+        async function sendPayload() {
+            const formData = new FormData();
+            formData.append('text_payload', document.getElementById('textPayload').value);
+            // Safe Baseline Human Telemetry for UI interactions
+            formData.append('behavior_json', '{"Destination Port": 443, "Max Packet Length": 150.0, "Average Packet Size": 100.0, "Packet Length Variance": 10.0}');
+            
+            const fileInput = document.getElementById('fileUpload');
+            if (fileInput.files.length > 0) {
+                formData.append('file', fileInput.files[0]);
+            }
+
+            try {
+                const res = await fetch('http://localhost:8000/api/v1/inspect', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if (data.status === 'BLOCK') {
+                    showToast(`Payload Dropped!<br><span class="text-sm font-normal mt-1 block">${data.threat_details.join('<br>')}</span>`, 'warning');
+                } else {
+                    showToast('Request Accepted Safely. Clean Traffic.', 'success');
+                }
+            } catch (error) {
+                showToast('API Offline: Cannot connect to SENTIO 360 Core.', 'warning');
+            }
+        }
+    </script>
+</body>
+</html>

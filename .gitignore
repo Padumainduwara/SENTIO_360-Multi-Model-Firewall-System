@@ -1,0 +1,25 @@
+# Datasets & Large Files (GitHub 100MB Limit)
+data/
+*.csv
+*.xlsx
+
+# Local Logs 
+logs/
+*.log
+
+# Virtual Environments
+venv/
+env/
+.conda/
+.env
+
+# Python Cache & IDE Files
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.ipynb_checkpoints/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
