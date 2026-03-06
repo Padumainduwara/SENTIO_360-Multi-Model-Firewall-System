@@ -280,18 +280,28 @@ async def inspect_traffic(
     if file is not None:
         try:
             file_bytes = await file.read()
-            nparr = np.frombuffer(file_bytes, np.uint8)
-            decoded_img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+            filename = file.filename.lower() if file.filename else ""
+            
             has_static = any(sig in file_bytes.lower() for sig in [b"<?php", b"<script", b"system(", b"eval(", b"$hacker"])
 
-            if not (decoded_img is not None and not has_static):
-                padded_bytes = file_bytes.ljust(4096, b'\x00')[:4096]
-                texture_img = np.frombuffer(padded_bytes, dtype=np.uint8).reshape((64, 64)) / 255.0
-                p_vis_threat = float(cnn_vision_model.predict(texture_img.reshape(-1, 64, 64, 1), verbose=0)[0][0])
-                if has_static: p_vis_threat = max(p_vis_threat, 0.95)
-                
-                if p_vis_threat > (0.50 if has_static else 0.40):
-                    threat_explanations.append(f"[VIS-XAI] Disguised Malware Texture. (Conf: {p_vis_threat*100:.1f}%)")
+            safe_extensions = ['.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.csv']
+            is_safe_doc = any(filename.endswith(ext) for ext in safe_extensions)
+
+            if is_safe_doc and not has_static:
+                p_vis_threat = 0.0 
+            else:
+                nparr = np.frombuffer(file_bytes, np.uint8)
+                decoded_img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+
+                if not (decoded_img is not None and not has_static):
+                    padded_bytes = file_bytes.ljust(4096, b'\x00')[:4096]
+                    texture_img = np.frombuffer(padded_bytes, dtype=np.uint8).reshape((64, 64)) / 255.0
+                    p_vis_threat = float(cnn_vision_model.predict(texture_img.reshape(-1, 64, 64, 1), verbose=0)[0][0])
+                    
+                    if has_static: p_vis_threat = max(p_vis_threat, 0.95)
+                   
+                    if p_vis_threat > (0.50 if has_static else 0.40):
+                        threat_explanations.append(f"[VIS-XAI] Disguised Malware Texture. (Conf: {p_vis_threat*100:.1f}%)")
         except Exception as e: pass
 
     # DATA SCIENCE: META-LEARNING FUSION LAYER
