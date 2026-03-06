@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+import pytz
 import uvicorn
 import joblib
 import pandas as pd
@@ -16,14 +17,14 @@ from pathlib import Path
 import warnings
 import shap 
 from scipy.stats import ks_2samp
-
-# 💥 NEW IMPORTS FOR MONGODB CLOUD 💥
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 from tensorflow.keras.models import load_model
+
+SL_TZ = pytz.timezone('Asia/Colombo')
 
 # SETUP & MEMORY
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,9 +34,6 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 # Local Logging Fallback
 logging.basicConfig(filename=LOGS_DIR / 'firewall.log', level=logging.WARNING, format='%(asctime)s - THREAT: %(message)s')
 
-# =====================================================================
-# 💥 MASTER DATA ENGINEERING: MONGODB CLOUD CONNECTION 💥
-# =====================================================================
 MONGO_URI = "mongodb+srv://sentio360_db_user:ZmvjSjwLtjJgfHBo@sentio360.bdy9xve.mongodb.net/?retryWrites=true&w=majority&appName=Sentio360"
 BLOCKED_IPS = set() # Kept in memory for instant blocking (Zero-Latency)
 
@@ -55,7 +53,6 @@ try:
     print(f"[SUCCESS] Connected to Cloud Database! Loaded {len(BLOCKED_IPS)} previously blocked IPs.")
 except Exception as e:
     print(f"[ERROR] Cloud Database Connection Failed: {e}")
-# =====================================================================
 
 # RATE LIMITING MEMORY
 REQUEST_COUNTS = {}
@@ -67,7 +64,7 @@ baseline_safe_traffic = []
 recent_safe_traffic = []    
 drift_alert_active = False
 
-app = FastAPI(title="SENTIO 360 - Enterprise AI Firewall")
+app = FastAPI(title="SENTIO 360 - AI Firewall")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 app.mount("/site", StaticFiles(directory=str(BASE_DIR / "target_website")), name="site")
@@ -76,16 +73,14 @@ app.mount("/admin", StaticFiles(directory=str(BASE_DIR / "admin_dashboard")), na
 class MarkSafeRequest(BaseModel):
     ip: str
 
-# 💥 FIX: REAL IP EXTRACTION FUNCTION FOR CLOUD HOSTING 💥
 def get_real_ip(request: Request):
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host
 
-# LOAD PRE-TRAINED AI MODELS 
 MODELS_DIR = BASE_DIR / 'models'
-print("[*] Waking up SENTIO 360 Omni-Modal AI Brains...")
+print("[*] SENTIO 360 AI Brains...")
 
 try:
     rf_behavior_model = joblib.load(MODELS_DIR / 'behavior_encoder' / 'rf_behavior_model.pkl')
@@ -141,22 +136,22 @@ async def get_dashboard_data():
 async def trigger_trap(request: Request):
     client_ip = get_real_ip(request)
     
-    # 💥 FIX: Save block to Cloud DB
+    current_time_sl = datetime.now(SL_TZ)
+    
     if client_ip not in BLOCKED_IPS:
         BLOCKED_IPS.add(client_ip)
-        blocked_ips_collection.update_one({"ip": client_ip}, {"$set": {"ip": client_ip, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}}, upsert=True)
+        blocked_ips_collection.update_one({"ip": client_ip}, {"$set": {"ip": client_ip, "timestamp": current_time_sl.strftime("%Y-%m-%d %H:%M:%S")}}, upsert=True)
     
     action = "IP BANNED (HONEYPOT)"
     details = "[Active Defense] Hidden Honeypot triggered."
     
     log_data = {
-        "time": datetime.now().strftime("%H:%M:%S"),
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "time": current_time_sl.strftime("%H:%M:%S"),
+        "date": current_time_sl.strftime("%Y-%m-%d"),
         "ip": client_ip, "status": "BLOCK", "action": action,
         "details": details, "latency": 0.0, "risk": 1.0, "anomaly_score": 0.0
     }
     
-    # Send log to Cloud Database
     logs_collection.insert_one(log_data.copy())
     logging.warning(f"IP: {client_ip} | ACTION: {action} | DETAILS: {details}")
     
@@ -170,8 +165,6 @@ async def mark_safe(req: MarkSafeRequest):
         blocked_ips_collection.delete_one({"ip": req.ip})
     return {"status": "UNBANNED"}
 
-# CORE FIREWALL ENGINE (Deep NLP + Autoencoder + SHAP)
-
 @app.post("/api/v1/inspect")
 async def inspect_traffic(
     request: Request, text_payload: str = Form(""),
@@ -180,15 +173,15 @@ async def inspect_traffic(
     global drift_alert_active, baseline_safe_traffic, recent_safe_traffic
     start_time = time.time()
     
-    # 💥 FIX: Using the Real IP function
     client_ip = get_real_ip(request)
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    current_time_sl = datetime.now(SL_TZ)
+    timestamp = current_time_sl.strftime("%H:%M:%S")
+    date_str = current_time_sl.strftime("%Y-%m-%d")
     
     if client_ip in BLOCKED_IPS:
         return {"status": "BLOCK", "action": "BANNED", "threat_details": ["IP is already Blacklisted."]}
 
-    # LAYER 1: RATE LIMITING 
     current_time = time.time()
     if client_ip not in REQUEST_COUNTS: REQUEST_COUNTS[client_ip] = []
     REQUEST_COUNTS[client_ip] = [t for t in REQUEST_COUNTS[client_ip] if current_time - t < RATE_LIMIT_WINDOW]
