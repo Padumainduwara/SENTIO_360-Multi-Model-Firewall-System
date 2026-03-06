@@ -3,7 +3,7 @@ import time
 import json
 import random
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://sentio-360-multi-model-firewall-system.onrender.com"
 API_URL = f"{BASE_URL}/api/v1/inspect"
 
 print("====================================================")

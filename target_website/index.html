@@ -11,7 +11,7 @@
     <a href="#" onclick="triggerTrap()" style="display: none;" aria-hidden="true">Admin Database Configuration</a>
     <script>
         async function triggerTrap() {
-            await fetch('http://localhost:8000/api/v1/trap', { method: 'POST' });
+            await fetch('/api/v1/trap', { method: 'POST' });
             window.location.reload(); 
         }
     </script>

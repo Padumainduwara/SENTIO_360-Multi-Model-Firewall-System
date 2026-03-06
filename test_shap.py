@@ -17,7 +17,7 @@ ddos_payload = {
 }
 
 res = requests.post(
-    "http://localhost:8000/api/v1/inspect", 
+    "https://sentio-360-multi-model-firewall-system.onrender.com/api/v1/inspect", 
     data={"text_payload": "", "behavior_json": json.dumps(ddos_payload)}
 )
 

@@ -98,7 +98,7 @@
 
         async function fetchLogs() {
             try {
-                const res = await fetch('http://localhost:8000/api/v1/dashboard_data');
+                const res = await fetch('/api/v1/dashboard_data');
                 const data = await res.json();
                 currentLogs = data.logs; 
                 
@@ -156,7 +156,7 @@
         setInterval(fetchLogs, 1000);
 
         async function markSafe(ip) {
-            await fetch('http://localhost:8000/api/v1/mark_safe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ip: ip }) });
+            await fetch('/api/v1/mark_safe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ip: ip }) });
         }
 
         function downloadPDF() {

@@ -2,7 +2,7 @@
 async function enforceFirewall() {
     try {
         // 1. Check for IP Bans
-        const res = await fetch('http://localhost:8000/api/v1/check_ip');
+        const res = await fetch('/api/v1/check_ip');
         const data = await res.json();
         
         if (data.blocked) {
@@ -35,7 +35,7 @@ async function enforceFirewall() {
         formData.append('behavior_json', safeTelemetry);
         
         // Silently send to AI Engine
-        fetch('http://localhost:8000/api/v1/inspect', {
+        fetch('/api/v1/inspect', {
             method: 'POST',
             body: formData
         });

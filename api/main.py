@@ -17,21 +17,45 @@ import warnings
 import shap 
 from scipy.stats import ks_2samp
 
+# 💥 NEW IMPORTS FOR MONGODB CLOUD 💥
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
+
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 from tensorflow.keras.models import load_model
-
 
 # SETUP & MEMORY
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Logging Format (Enterprise Standard)
+# Local Logging Fallback
 logging.basicConfig(filename=LOGS_DIR / 'firewall.log', level=logging.WARNING, format='%(asctime)s - THREAT: %(message)s')
 
-BLOCKED_IPS = set()
-traffic_logs = [] 
+# =====================================================================
+# 💥 MASTER DATA ENGINEERING: MONGODB CLOUD CONNECTION 💥
+# =====================================================================
+MONGO_URI = "mongodb+srv://sentio360_db_user:ZmvjSjwLtjJgfHBo@sentio360.bdy9xve.mongodb.net/?retryWrites=true&w=majority&appName=Sentio360"
+BLOCKED_IPS = set() # Kept in memory for instant blocking (Zero-Latency)
+
+try:
+    print("[*] Connecting to MongoDB Atlas Cloud...")
+    mongo_client = MongoClient(MONGO_URI, server_api=ServerApi('1'))
+    db = mongo_client['sentio360_db']
+    
+    # Database Collections (Tables)
+    logs_collection = db['traffic_logs']
+    blocked_ips_collection = db['blocked_ips']
+    
+    # Load all historically blocked IPs from Cloud into server memory on startup!
+    for doc in blocked_ips_collection.find({}):
+        BLOCKED_IPS.add(doc.get('ip'))
+        
+    print(f"[SUCCESS] Connected to Cloud Database! Loaded {len(BLOCKED_IPS)} previously blocked IPs.")
+except Exception as e:
+    print(f"[ERROR] Cloud Database Connection Failed: {e}")
+# =====================================================================
 
 # RATE LIMITING MEMORY
 REQUEST_COUNTS = {}
@@ -52,6 +76,13 @@ app.mount("/admin", StaticFiles(directory=str(BASE_DIR / "admin_dashboard")), na
 class MarkSafeRequest(BaseModel):
     ip: str
 
+# 💥 FIX: REAL IP EXTRACTION FUNCTION FOR CLOUD HOSTING 💥
+def get_real_ip(request: Request):
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host
+
 # LOAD PRE-TRAINED AI MODELS 
 MODELS_DIR = BASE_DIR / 'models'
 print("[*] Waking up SENTIO 360 Omni-Modal AI Brains...")
@@ -61,15 +92,12 @@ try:
     behavior_scaler = joblib.load(MODELS_DIR / 'behavior_encoder' / 'behavior_scaler.pkl')
     
     print("[*] Loading Deep NLP Neural Network...")
-    # 💥 FIX: Added compile=False to strictly mute Keras warning logs!
     dnn_text_model = load_model(MODELS_DIR / 'text_encoder' / 'dnn_text_model.h5', compile=False)
     tfidf_vectorizer = joblib.load(MODELS_DIR / 'text_encoder' / 'tfidf_vectorizer.pkl')
     
-    # 💥 FIX: Added compile=False
     cnn_vision_model = load_model(MODELS_DIR / 'vision_encoder' / 'cnn_vision_model.h5', compile=False)
     
     try:
-        # 💥 FIX: Added compile=False
         autoencoder_model = load_model(MODELS_DIR / 'behavior_encoder' / 'autoencoder_model.h5', compile=False)
         print(" -> [DS] Deep Autoencoder loaded successfully.")
     except:
@@ -87,35 +115,49 @@ BEHAVIOR_FEATURES = ['Max Packet Length', 'Packet Length Variance', 'Avg Bwd Seg
 # ENDPOINTS FOR DASHBOARD & NEW FEATURES
 @app.get("/api/v1/check_ip")
 async def check_ip(request: Request):
-    if request.client.host in BLOCKED_IPS:
+    client_ip = get_real_ip(request)
+    if client_ip in BLOCKED_IPS:
         return {"blocked": True, "reason": "IP Permanently Banned by SENTIO 360"}
     return {"blocked": False}
 
 @app.get("/api/v1/dashboard_data")
 async def get_dashboard_data():
+    # 💥 FIX: Fetching Data directly from MongoDB Cloud instead of local memory!
+    try:
+        recent_logs = list(logs_collection.find({}, {"_id": 0}).sort("_id", -1).limit(50))
+        total_requests = logs_collection.count_documents({})
+    except:
+        recent_logs = []
+        total_requests = 0
+
     return {
-        "total_requests": len(traffic_logs),
+        "total_requests": total_requests,
         "blocked_ips": list(BLOCKED_IPS),
-        "logs": list(reversed(traffic_logs))[:50],
+        "logs": recent_logs,
         "concept_drift": drift_alert_active 
     }
 
 @app.post("/api/v1/trap")
 async def trigger_trap(request: Request):
-    client_ip = request.client.host
-    BLOCKED_IPS.add(client_ip)
+    client_ip = get_real_ip(request)
     
-    details = "[Active Defense] Hidden Honeypot triggered."
+    # 💥 FIX: Save block to Cloud DB
+    if client_ip not in BLOCKED_IPS:
+        BLOCKED_IPS.add(client_ip)
+        blocked_ips_collection.update_one({"ip": client_ip}, {"$set": {"ip": client_ip, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}}, upsert=True)
+    
     action = "IP BANNED (HONEYPOT)"
+    details = "[Active Defense] Hidden Honeypot triggered."
     
-    traffic_logs.append({
+    log_data = {
         "time": datetime.now().strftime("%H:%M:%S"),
+        "date": datetime.now().strftime("%Y-%m-%d"),
         "ip": client_ip, "status": "BLOCK", "action": action,
-        "details": details,
-        "latency": 0.0, "risk": 1.0, "anomaly_score": 0.0
-    })
+        "details": details, "latency": 0.0, "risk": 1.0, "anomaly_score": 0.0
+    }
     
-    # 💥 FIX: Writing Honeypot Traps to firewall.log
+    # Send log to Cloud Database
+    logs_collection.insert_one(log_data.copy())
     logging.warning(f"IP: {client_ip} | ACTION: {action} | DETAILS: {details}")
     
     return {"status": "BANNED"}
@@ -124,6 +166,8 @@ async def trigger_trap(request: Request):
 async def mark_safe(req: MarkSafeRequest):
     if req.ip in BLOCKED_IPS:
         BLOCKED_IPS.remove(req.ip)
+        # Remove from Cloud DB so it doesn't get blocked again on server restart
+        blocked_ips_collection.delete_one({"ip": req.ip})
     return {"status": "UNBANNED"}
 
 # CORE FIREWALL ENGINE (Deep NLP + Autoencoder + SHAP)
@@ -135,8 +179,11 @@ async def inspect_traffic(
 ):
     global drift_alert_active, baseline_safe_traffic, recent_safe_traffic
     start_time = time.time()
-    client_ip = request.client.host
+    
+    # 💥 FIX: Using the Real IP function
+    client_ip = get_real_ip(request)
     timestamp = datetime.now().strftime("%H:%M:%S")
+    date_str = datetime.now().strftime("%Y-%m-%d")
     
     if client_ip in BLOCKED_IPS:
         return {"status": "BLOCK", "action": "BANNED", "threat_details": ["IP is already Blacklisted."]}
@@ -148,18 +195,19 @@ async def inspect_traffic(
     REQUEST_COUNTS[client_ip].append(current_time)
     
     if len(REQUEST_COUNTS[client_ip]) > MAX_REQUESTS_PER_WINDOW:
-        BLOCKED_IPS.add(client_ip)
-        
-        details = "Spam/Brute-force detected."
+        if client_ip not in BLOCKED_IPS:
+            BLOCKED_IPS.add(client_ip)
+            blocked_ips_collection.update_one({"ip": client_ip}, {"$set": {"ip": client_ip, "timestamp": f"{date_str} {timestamp}"}}, upsert=True)
+            
         action = "IP BANNED (RATE LIMIT)"
+        details = "Spam/Brute-force detected."
         
-        traffic_logs.append({
-            "time": timestamp, "ip": client_ip, "status": "BLOCK", "action": action,
+        log_data = {
+            "time": timestamp, "date": date_str, "ip": client_ip, "status": "BLOCK", "action": action,
             "details": details, "latency": float(round((time.time() - start_time) * 1000, 2)), 
             "risk": 1.0, "anomaly_score": 0.0
-        })
-        
-        # 💥 FIX: Writing Rate Limit attacks to firewall.log
+        }
+        logs_collection.insert_one(log_data.copy())
         logging.warning(f"IP: {client_ip} | ACTION: {action} | DETAILS: {details}")
         
         return {"status": "BLOCK", "action": "BANNED", "threat_details": ["Rate Limit Exceeded."]}
@@ -189,7 +237,6 @@ async def inspect_traffic(
                 p_nlp_threat = float(prob_web) 
                 threat_explanations.append(f"[NLP-XAI] Deep Neural Net detected SQLi/XSS syntax (Conf: {prob_web*100:.1f}%)")
                 
-            
     # 2. BEHAVIORAL ANALYSIS & DATA SCIENCE UPGRADES
     if behavior_json != "{}" and behavior_json.strip() != "":
         try:
@@ -201,7 +248,6 @@ async def inspect_traffic(
             p_beh_threat = float(rf_behavior_model.predict_proba(b_scaled)[0][1])
             max_len = float(b_data.get("Max Packet Length", 0.0))
             
-            # REAL DEEP AUTOENCODER
             if autoencoder_model:
                 reconstruction = autoencoder_model.predict(b_scaled, verbose=0)
                 anomaly_error = round(float(np.mean(np.power(b_scaled - reconstruction, 2))), 4)
@@ -213,7 +259,6 @@ async def inspect_traffic(
                 p_beh_threat = max(p_beh_threat, 0.85)
                 is_bot_attack = True
 
-            # SHAP EXPLAINABLE AI
             if p_beh_threat > 0.40:
                 p_beh_threat = max(p_beh_threat, 0.99)
                 is_bot_attack = True 
@@ -226,7 +271,6 @@ async def inspect_traffic(
                 except:
                     threat_explanations.append(f"[BEH-XAI] Behavioral deviation detected.")
 
-            # KS-TEST STATISTICAL CONCEPT DRIFT
             if not is_bot_attack and p_beh_threat < 0.2:
                 if len(baseline_safe_traffic) < 50:
                     baseline_safe_traffic.append(max_len)
@@ -237,7 +281,6 @@ async def inspect_traffic(
                         stat, p_value = ks_2samp(baseline_safe_traffic, recent_safe_traffic)
                         if p_value < 0.05:
                             drift_alert_active = True
-
         except Exception as e: pass
 
     # 3. VISION ANALYSIS 
@@ -269,17 +312,21 @@ async def inspect_traffic(
     if final_risk_score >= 0.6:
         status = "BLOCK"
         if is_bot_attack:
-            BLOCKED_IPS.add(client_ip)
+            if client_ip not in BLOCKED_IPS:
+                BLOCKED_IPS.add(client_ip)
+                # Save newly blocked IP to Cloud
+                blocked_ips_collection.update_one({"ip": client_ip}, {"$set": {"ip": client_ip, "timestamp": f"{date_str} {timestamp}"}}, upsert=True)
             action_taken = "IP BANNED (BOTNET)"
         else:
             action_taken = "PAYLOAD DROPPED (WARNING)"
             
     process_time_ms = float(round((time.time() - start_time) * 1000, 2))
-    
     details_string = " | ".join(threat_explanations) if threat_explanations else "[Clean Traffic]"
     
-    traffic_logs.append({
-        "time": timestamp, 
+    # 💥 FIX: Uploading directly to MongoDB Collection 💥
+    log_data = {
+        "time": timestamp,
+        "date": date_str,
         "ip": client_ip, 
         "status": status,
         "action": action_taken, 
@@ -287,9 +334,13 @@ async def inspect_traffic(
         "latency": process_time_ms, 
         "risk": float(min(round(final_risk_score, 2), 1.0)),
         "anomaly_score": float(anomaly_error)
-    })
+    }
     
-    # 💥 THE FIX: Writing actual Threat Details to the firewall.log file! 💥
+    try:
+        logs_collection.insert_one(log_data.copy())
+    except:
+        pass # Silently fail if DB has a momentary hiccup so the firewall doesn't crash
+    
     if status == "BLOCK":
         log_msg = f"IP: {client_ip} | ACTION: {action_taken} | RISK: {final_risk_score:.2f} | DETAILS: {details_string}"
         logging.warning(log_msg)
