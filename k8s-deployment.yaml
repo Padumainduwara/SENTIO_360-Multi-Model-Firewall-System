@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentio360-firewall
+  labels:
+    app: sentio360
+spec:
+  replicas: 3 # Scales to 3 server instances automatically
+  selector:
+    matchLabels:
+      app: sentio360
+  template:
+    metadata:
+      labels:
+        app: sentio360
+    spec:
+      containers:
+      - name: sentio360-backend
+        image: padumainduwara/sentio360:latest
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentio360-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: sentio360
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
