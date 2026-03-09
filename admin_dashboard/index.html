@@ -73,6 +73,17 @@
     </div>
 
     <script>
+
+        // Security Guard: Check if admin is logged in
+    if (sessionStorage.getItem("admin_token") !== "sentio-admin-secure-token-777") {
+        window.location.href = "login.html"; // Redirect to login page
+    }
+
+    // Optional: Add a logout function
+    function logout() {
+        sessionStorage.removeItem("admin_token");
+        window.location.href = "login.html";
+    }
         Chart.defaults.color = '#888';
         Chart.defaults.font.family = 'monospace';
 

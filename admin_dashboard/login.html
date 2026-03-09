@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - SENTIO 360</title>
+    <style>
+        body {
+            background-color: #0d1117; color: #c9d1d9; font-family: Arial, sans-serif;
+            display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;
+        }
+        .login-box {
+            background-color: #161b22; padding: 40px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 300px; text-align: center;
+            border: 1px solid #30363d;
+        }
+        .login-box h2 { color: #58a6ff; margin-bottom: 20px; }
+        input {
+            width: 90%; padding: 10px; margin: 10px 0; border-radius: 5px;
+            border: 1px solid #30363d; background-color: #0d1117; color: white;
+        }
+        button {
+            width: 100%; padding: 10px; background-color: #238636; color: white;
+            border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px;
+        }
+        button:hover { background-color: #2ea043; }
+        #error-msg { color: #ff7b72; font-size: 14px; margin-top: 10px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="login-box">
+    <h2>SENTIO 360<br><span style="font-size: 16px; color: #8b949e;">Admin Portal</span></h2>
+    <input type="text" id="username" placeholder="Username" required>
+    <input type="password" id="password" placeholder="Password" required>
+    <button onclick="login()">Login</button>
+    <p id="error-msg">Invalid Credentials!</p>
+</div>
+
+<script>
+    async function login() {
+        const user = document.getElementById('username').value;
+        const pass = document.getElementById('password').value;
+        const errorMsg = document.getElementById('error-msg');
+
+        try {
+            // Change the URL if your backend runs on a different port
+            const response = await fetch('http://127.0.0.1:8000/api/admin/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass })
+            });
+            const result = await response.json();
+
+            if (result.status === "success") {
+                // Save token and redirect to dashboard
+                sessionStorage.setItem("admin_token", result.token);
+                window.location.href = "index.html";
+            } else {
+                errorMsg.style.display = "block";
+            }
+        } catch (error) {
+            alert("Error connecting to server. Is FastAPI running?");
+        }
+    }
+</script>
+
+</body>
+</html>

@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from pydantic import BaseModel
 import pytz
 import uvicorn
 import joblib
@@ -69,6 +70,19 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 app.mount("/site", StaticFiles(directory=str(BASE_DIR / "target_website")), name="site")
 app.mount("/admin", StaticFiles(directory=str(BASE_DIR / "admin_dashboard")), name="admin")
+
+class LoginData(BaseModel):
+    username: str
+    password: str
+
+# --- Admin Login Endpoint ---
+@app.post("/api/admin/login")
+async def admin_login(data: LoginData):
+    # Hardcoded credentials for security prototype
+    if data.username == "admin" and data.password == "admin123":
+        return {"status": "success", "token": "sentio-admin-secure-token-777"}
+    else:
+        return {"status": "error", "message": "Invalid username or password!"}
 
 class MarkSafeRequest(BaseModel):
     ip: str
