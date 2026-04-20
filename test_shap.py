@@ -1,7 +1,7 @@
 import requests
 import json
 
-print("🚀 Sending Direct Attack to Trigger Deep Learning & SHAP XAI...\n")
+print("Sending Direct Attack to Trigger Deep Learning & SHAP XAI...\n")
 
 ddos_payload = {
     "Max Packet Length": 11607.0,
@@ -21,8 +21,8 @@ res = requests.post(
     data={"text_payload": "", "behavior_json": json.dumps(ddos_payload)}
 )
 
-print(f"🛑 Status: {res.json()['status']}")
-print(f"⚠️ Action: {res.json()['action']}")
-print("🧠 AI Explanations (Threat Details):")
+print(f"Status: {res.json()['status']}")
+print(f"Action: {res.json()['action']}")
+print("AI Explanations (Threat Details):")
 for detail in res.json()['threat_details']:
     print(f"  -> {detail}")

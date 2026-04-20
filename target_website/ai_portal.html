@@ -112,7 +112,7 @@
             }
 
             try {
-                const res = await fetch('/api/v1/inspect', { method: 'POST', body: formData });
+                const res = await fetch('http://127.0.0.1:8000/api/v1/inspect', { method: 'POST', body: formData });
                 const data = await res.json();
                 
                 if (data.status === 'BLOCK') {

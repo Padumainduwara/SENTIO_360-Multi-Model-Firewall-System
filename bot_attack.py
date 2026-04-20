@@ -6,9 +6,7 @@ import random
 BASE_URL = "https://sentio-360-multi-model-firewall-system.onrender.com"
 API_URL = f"{BASE_URL}/api/v1/inspect"
 
-print("====================================================")
-print("💀 SENTIO 360 - ADVANCED APT BOTNET SIMULATOR 💀")
-print("====================================================\n")
+print("SENTIO 360 - ADVANCED APT BOTNET SIMULATOR")
 
 # STAGE 1: Stealth Reconnaissance (Scraping Pages like a real bot)
 pages_to_scrape = ["/site/index.html", "/site/about.html", "/site/contact.html"]
@@ -21,7 +19,7 @@ for page in pages_to_scrape:
         if "ACCESS DENIED" in res.text:
             print("   [!] Bot blocked during page navigation!")
             exit()
-        time.sleep(1) # Stealth delay to mimic a human
+        time.sleep(1)
     except Exception as e:
         print("   [!] Target Offline.")
         exit()
@@ -53,8 +51,8 @@ for i in range(1, 4):
         res = requests.post(API_URL, data={"text_payload": "", "behavior_json": json.dumps(ddos_payload)})
         
         if res.json().get('status') == 'BLOCK':
-            print(f"   ⚠️ FIREWALL REACTION: BLOCKED!")
-            print(f"   🛑 Reason: {res.json()['threat_details'][0]}")
+            print(f"   FIREWALL REACTION: BLOCKED!")
+            print(f"   Reason: {res.json()['threat_details'][0]}")
             break # Stop attacking if banned
     except Exception as e:
         print("   [!] API unreachable.")
@@ -65,6 +63,6 @@ print("\n[*] PHASE 4: Bot verifying if it can still access the website...")
 time.sleep(1)
 web_res = requests.get(f"{BASE_URL}/api/v1/check_ip")
 if web_res.json().get('blocked'):
-    print("❌ ACCESS DENIED! Bot IP is permanently BANNED from all pages.")
+    print("ACCESS DENIED! Bot IP is permanently BANNED from all pages.")
 else:
-    print("✅ Access Allowed.")
+    print("Access Allowed.")
